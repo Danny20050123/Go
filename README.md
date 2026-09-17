@@ -1,6 +1,6 @@
 # 82-0
 
-82-0 is an NBA roster-building game. This repository is a monorepo with a
+Poké Draft is a Pokémon drafting game. This repository is a monorepo with a
 Next.js frontend and a Go backend.
 
 ## Local development
@@ -20,5 +20,11 @@ Copy-Item .env.local.example .env.local
 npm run dev
 ```
 
-Open http://localhost:3000. The page calls the backend health endpoint at
-http://localhost:8080/api/health and displays its status.
+Open http://localhost:3000. The page calls the Go backend for its health status
+and Pokémon data. The backend requests PokéAPI and calculates the displayed
+base-stat score; the frontend does not calculate scores.
+
+## Current API
+
+`GET /api/pokemon/{name}` returns a Pokémon's six base stats and its calculated
+score. For example: http://localhost:8080/api/pokemon/pikachu
