@@ -1,0 +1,10 @@
+# Frontend dependencies and build output
+frontend/node_modules/
+frontend/.next/
+
+# Local environment configuration
+frontend/.env.local
+
+# Go build output
+backend/api
+backend/api.exe
