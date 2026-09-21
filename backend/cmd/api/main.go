@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -69,6 +70,13 @@ type pokemon struct {
 }
 
 func main() {
+	db, err := openDatabase(context.Background(), os.Getenv("DATABASE_URL"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	database = db
+	defer database.Close()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", healthHandler)
 	mux.HandleFunc("GET /api/pokemon/{name}", pokemonHandler)
@@ -178,7 +186,8 @@ func pickPokemonHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := currentDraft.state.choose(r.Context(), request.PokemonID); err != nil {
+	nextState := currentDraft.state
+	if err := nextState.choose(r.Context(), request.PokemonID); err != nil {
 		switch {
 		case errors.Is(err, errInvalidPick):
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -191,6 +200,15 @@ func pickPokemonHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if nextState.Picks == teamSize {
+		if err := saveHighScore(r.Context(), nextState.PlayerID, nextState.response().TotalScore); err != nil {
+			log.Printf("save high score for %q: %v", nextState.PlayerID, err)
+			http.Error(w, "could not save high score", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	currentDraft.state = nextState
 	writeJSON(w, http.StatusOK, currentDraft.state.response())
 }
 
