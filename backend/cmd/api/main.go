@@ -8,7 +8,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,6 +22,12 @@ const (
 var pokeAPIClient = &http.Client{Timeout: 5 * time.Second}
 
 var errPokemonNotFound = errors.New("pokemon not found")
+
+var currentDraft struct {
+	sync.Mutex
+	state   draftState
+	started bool
+}
 
 type pokemonResponse struct {
 	ID    int    `json:"id"`
@@ -64,6 +72,9 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", healthHandler)
 	mux.HandleFunc("GET /api/pokemon/{name}", pokemonHandler)
+	mux.HandleFunc("POST /api/draft", startDraftHandler)
+	mux.HandleFunc("GET /api/draft", getDraftHandler)
+	mux.HandleFunc("POST /api/draft/picks", pickPokemonHandler)
 
 	server := &http.Server{
 		Addr:    ":8080",
@@ -106,6 +117,67 @@ func pokemonHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, pokemon)
+}
+
+func startDraftHandler(w http.ResponseWriter, r *http.Request) {
+	currentDraft.Lock()
+	defer currentDraft.Unlock()
+
+	state := draftState{}
+	if err := state.generateChoices(r.Context()); err != nil {
+		log.Printf("start draft: %v", err)
+		http.Error(w, "pokemon service unavailable", http.StatusBadGateway)
+		return
+	}
+
+	currentDraft.state = state
+	currentDraft.started = true
+	writeJSON(w, http.StatusCreated, currentDraft.state.response())
+}
+
+func getDraftHandler(w http.ResponseWriter, r *http.Request) {
+	currentDraft.Lock()
+	defer currentDraft.Unlock()
+
+	if !currentDraft.started {
+		http.Error(w, errDraftNotStarted.Error(), http.StatusNotFound)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, currentDraft.state.response())
+}
+
+func pickPokemonHandler(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		PokemonID int `json:"pokemon_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	currentDraft.Lock()
+	defer currentDraft.Unlock()
+
+	if !currentDraft.started {
+		http.Error(w, errDraftNotStarted.Error(), http.StatusNotFound)
+		return
+	}
+
+	if err := currentDraft.state.choose(r.Context(), request.PokemonID); err != nil {
+		switch {
+		case errors.Is(err, errInvalidPick):
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		case errors.Is(err, errDraftComplete):
+			http.Error(w, err.Error(), http.StatusConflict)
+		default:
+			log.Printf("pick pokemon: %v", err)
+			http.Error(w, "pokemon service unavailable", http.StatusBadGateway)
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, currentDraft.state.response())
 }
 
 func getPokemon(ctx context.Context, name string) (pokemon, error) {
@@ -162,6 +234,10 @@ func getPokemon(ctx context.Context, name string) (pokemon, error) {
 	return result, nil
 }
 
+func getPokemonByID(ctx context.Context, id int) (pokemon, error) {
+	return getPokemon(ctx, strconv.Itoa(id))
+}
+
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -178,7 +254,7 @@ func cors(next http.Handler) http.Handler {
 		}
 
 		if r.Method == http.MethodOptions {
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 			w.WriteHeader(http.StatusNoContent)
 			return
