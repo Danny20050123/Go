@@ -12,3 +12,28 @@ code {
   background: #f1f1f1;
   padding: 0.15rem 0.3rem;
 }
+
+button {
+  cursor: pointer;
+  padding: 0.5rem 0.75rem;
+}
+
+.draft-game {
+  margin-top: 2rem;
+}
+
+.draft-summary {
+  margin-bottom: 1rem;
+}
+
+.pokemon-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+
+.pokemon-card {
+  border: 1px solid #ccc;
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
