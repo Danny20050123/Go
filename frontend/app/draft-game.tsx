@@ -10,6 +10,7 @@ type Pokemon = {
 };
 
 type Draft = {
+  player_id: string;
   choices: Pokemon[];
   team: Pokemon[];
   picks: number;
@@ -21,6 +22,7 @@ const apiURL = process.env.NEXT_PUBLIC_API_URL;
 
 export default function DraftGame() {
   const [draft, setDraft] = useState<Draft | null>(null);
+  const [playerID, setPlayerID] = useState("");
   const [message, setMessage] = useState("Start a draft to receive three Pokemon choices.");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -38,9 +40,19 @@ export default function DraftGame() {
   }
 
   async function startDraft() {
+    const trimmedPlayerID = playerID.trim();
+    if (!trimmedPlayerID) {
+      setMessage("Enter a player ID before starting a draft.");
+      return;
+    }
+
     setIsLoading(true);
     try {
-      const nextDraft = await requestDraft("/api/draft", { method: "POST" });
+      const nextDraft = await requestDraft("/api/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ player_id: trimmedPlayerID }),
+      });
       setDraft(nextDraft);
       setMessage("Choose one Pokemon. The backend will generate the next round.");
     } catch (error) {
@@ -71,13 +83,30 @@ export default function DraftGame() {
     <section className="draft-game">
       <div className="draft-summary">
         <p>{message}</p>
+        {draft && <p>Player ID: {draft.player_id}</p>}
         <p>Picked: {draft?.picks ?? 0}/6</p>
         <p>Total score: {draft?.total_score ?? 0}</p>
       </div>
 
-      <button onClick={startDraft} disabled={isLoading}>
-        {isLoading ? "Loading..." : "Start new draft"}
-      </button>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void startDraft();
+        }}
+      >
+        <label htmlFor="player-id">Player ID</label>
+        <input
+          id="player-id"
+          value={playerID}
+          onChange={(event) => setPlayerID(event.target.value)}
+          placeholder="For example: ash-ketchum"
+          disabled={isLoading}
+          required
+        />
+        <button type="submit" disabled={isLoading}>
+          {isLoading ? "Loading..." : "Start new draft"}
+        </button>
+      </form>
 
       {draft && !draft.complete && (
         <>

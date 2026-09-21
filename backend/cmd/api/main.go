@@ -120,10 +120,24 @@ func pokemonHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func startDraftHandler(w http.ResponseWriter, r *http.Request) {
+	var request struct {
+		PlayerID string `json:"player_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	playerID := strings.TrimSpace(request.PlayerID)
+	if playerID == "" {
+		http.Error(w, errPlayerIDRequired.Error(), http.StatusBadRequest)
+		return
+	}
+
 	currentDraft.Lock()
 	defer currentDraft.Unlock()
 
-	state := draftState{}
+	state := draftState{PlayerID: playerID}
 	if err := state.generateChoices(r.Context()); err != nil {
 		log.Printf("start draft: %v", err)
 		http.Error(w, "pokemon service unavailable", http.StatusBadGateway)

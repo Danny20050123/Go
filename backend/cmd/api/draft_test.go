@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
 
 func TestGeneratePokemonIDsReturnsThreeUniqueIDsInRange(t *testing.T) {
 	for range 20 {
@@ -16,5 +21,24 @@ func TestGeneratePokemonIDsReturnsThreeUniqueIDsInRange(t *testing.T) {
 			}
 			seen[id] = true
 		}
+	}
+}
+
+func TestStartDraftRequiresPlayerID(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/api/draft", strings.NewReader(`{}`))
+	response := httptest.NewRecorder()
+
+	startDraftHandler(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+}
+
+func TestDraftResponseIncludesPlayerID(t *testing.T) {
+	state := draftState{PlayerID: "player-42"}
+
+	if response := state.response(); response.PlayerID != "player-42" {
+		t.Fatalf("player ID = %q, want player-42", response.PlayerID)
 	}
 }

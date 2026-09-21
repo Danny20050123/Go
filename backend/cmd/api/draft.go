@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math/rand/v2"
+	"sync"
 )
 
 const (
@@ -13,18 +14,21 @@ const (
 )
 
 var (
-	errDraftNotStarted = errors.New("draft has not started")
-	errInvalidPick     = errors.New("pokemon is not one of the current choices")
-	errDraftComplete   = errors.New("draft is complete")
+	errDraftNotStarted  = errors.New("draft has not started")
+	errInvalidPick      = errors.New("pokemon is not one of the current choices")
+	errDraftComplete    = errors.New("draft is complete")
+	errPlayerIDRequired = errors.New("player ID is required before starting a draft")
 )
 
 type draftState struct {
-	Choices [choicesPerRound]pokemon
-	Team    [teamSize]pokemon
-	Picks   int
+	PlayerID string
+	Choices  [choicesPerRound]pokemon
+	Team     [teamSize]pokemon
+	Picks    int
 }
 
 type draftResponse struct {
+	PlayerID   string                   `json:"player_id"`
 	Choices    [choicesPerRound]pokemon `json:"choices"`
 	Team       []pokemon                `json:"team"`
 	Picks      int                      `json:"picks"`
@@ -51,26 +55,57 @@ func generatePokemonIDs() [choicesPerRound]int {
 }
 
 // generateChoices fetches data for three random Pokémon that have not already
-// been selected for the team.
+// been selected for the team. Their independent HTTP requests run concurrently,
+// but only this function stores results in the draft state.
 func (draft *draftState) generateChoices(ctx context.Context) error {
 	ids := generatePokemonIDs()
 	for index, id := range ids {
 		for {
-			if draft.hasPokemon(id) || containsID(choiceIDs(draft.Choices[:index]), id) {
+			if draft.hasPokemon(id) || containsID(ids[:index], id) {
 				id = rand.IntN(maxPokemonID) + 1
 				continue
 			}
-
-			pokemon, err := getPokemonByID(ctx, id)
-			if err != nil {
-				return err
-			}
-
-			draft.Choices[index] = pokemon
+			ids[index] = id
 			break
 		}
 	}
 
+	type result struct {
+		index   int
+		pokemon pokemon
+		err     error
+	}
+
+	requestContext, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	results := make(chan result, choicesPerRound)
+	var group sync.WaitGroup
+	for index, id := range ids {
+		group.Add(1)
+		go func(index, id int) {
+			defer group.Done()
+
+			pokemon, err := getPokemonByID(requestContext, id)
+			if err != nil {
+				cancel()
+			}
+			results <- result{index: index, pokemon: pokemon, err: err}
+		}(index, id)
+	}
+
+	group.Wait()
+	close(results)
+
+	var choices [choicesPerRound]pokemon
+	for result := range results {
+		if result.err != nil {
+			return result.err
+		}
+		choices[result.index] = result.pokemon
+	}
+
+	draft.Choices = choices
 	return nil
 }
 
@@ -121,6 +156,7 @@ func (draft draftState) response() draftResponse {
 	copy(team, draft.Team[:draft.Picks])
 
 	response := draftResponse{
+		PlayerID: draft.PlayerID,
 		Choices:  draft.Choices,
 		Team:     team,
 		Picks:    draft.Picks,
@@ -141,13 +177,4 @@ func containsID(ids []int, target int) bool {
 	}
 
 	return false
-}
-
-func choiceIDs(choices []pokemon) []int {
-	ids := make([]int, len(choices))
-	for index, choice := range choices {
-		ids[index] = choice.ID
-	}
-
-	return ids
 }
