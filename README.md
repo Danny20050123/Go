@@ -10,6 +10,8 @@ Start the backend:
 ```powershell
 cd backend
 $env:DATABASE_URL = "postgres://pokemon_game:YOUR_PASSWORD@localhost:5432/pokemon_draft?sslmode=disable"
+# Set this only after Redis is running locally:
+# $env:REDIS_URL = "redis://localhost:6379/0"
 go run ./cmd/api
 ```
 
@@ -30,6 +32,10 @@ six-Pokémon draft, the backend saves the server-calculated total as that
 player's high score. Replace `YOUR_PASSWORD` with the password you created for
 the `pokemon_game` PostgreSQL role. Do not put this connection string in the
 frontend because it contains the database password.
+
+Redis caching is optional but recommended. When `REDIS_URL` points to a running
+Redis server, successful PokéAPI responses are cached for 24 hours. If Redis is
+unavailable, the backend logs the problem and fetches from PokéAPI instead.
 
 ## Current API
 

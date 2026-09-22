@@ -42,3 +42,10 @@ func TestDraftResponseIncludesPlayerID(t *testing.T) {
 		t.Fatalf("player ID = %q, want player-42", response.PlayerID)
 	}
 }
+
+func TestPokemonCacheKeyNormalizesPokemonName(t *testing.T) {
+	key := pokemonCacheKey("  Pikachu  ")
+	if key != "pokemon:v1:pikachu" {
+		t.Fatalf("cache key = %q, want pokemon:v1:pikachu", key)
+	}
+}

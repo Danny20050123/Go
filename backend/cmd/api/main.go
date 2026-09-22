@@ -77,6 +77,11 @@ func main() {
 	database = db
 	defer database.Close()
 
+	pokemonCache = openPokemonCache(context.Background(), os.Getenv("REDIS_URL"))
+	if pokemonCache != nil {
+		defer pokemonCache.Close()
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", healthHandler)
 	mux.HandleFunc("GET /api/pokemon/{name}", pokemonHandler)
@@ -213,6 +218,10 @@ func pickPokemonHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func getPokemon(ctx context.Context, name string) (pokemon, error) {
+	if cached, found := getCachedPokemon(ctx, name); found {
+		return cached, nil
+	}
+
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, pokeAPIURL+url.PathEscape(name), nil)
 	if err != nil {
 		return pokemon{}, fmt.Errorf("create request: %w", err)
@@ -263,6 +272,7 @@ func getPokemon(ctx context.Context, name string) (pokemon, error) {
 	result.Score = result.Stats.HP + result.Stats.Attack + result.Stats.Defense +
 		result.Stats.SpecialAttack + result.Stats.SpecialDefense + result.Stats.Speed
 
+	cachePokemon(ctx, name, result)
 	return result, nil
 }
 
